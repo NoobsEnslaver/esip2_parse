@@ -1,0 +1,15 @@
+{application, esip_parse,
+ [{description, "An OTP library"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, [esip_parse]},
+
+  {maintainers, []},
+  {licenses, ["GNU AFFERO GENERAL PUBLIC LICENSE Version 3"]},
+  {links, []}
+ ]}.
