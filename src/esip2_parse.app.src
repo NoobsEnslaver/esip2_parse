@@ -1,4 +1,4 @@
-{application, esip_parse,
+{application, esip2_parse,
  [{description, "An OTP library"},
   {vsn, "0.1.0"},
   {registered, []},
@@ -7,7 +7,7 @@
     stdlib
    ]},
   {env,[]},
-  {modules, [esip_parse]},
+  {modules, [esip2_parse]},
 
   {maintainers, []},
   {licenses, ["GNU AFFERO GENERAL PUBLIC LICENSE Version 3"]},

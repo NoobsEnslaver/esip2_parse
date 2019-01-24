@@ -1,5 +1,5 @@
--ifndef(ESIP_PARSE_HRL).
--define(ESIP_PARSE_HRL, 1).
+-ifndef(ESIP2_PARSE_UTILS_HRL).
+-define(ESIP2_PARSE_UTILS_HRL, 1).
 
 -define(IS_RESERVED(C),
         (C=:=$;) or (C=:=$/) or (C=:=$?) or (C=:=$:) or (C=:=$@) or

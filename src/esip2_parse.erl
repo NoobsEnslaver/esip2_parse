@@ -1,7 +1,8 @@
--module(esip_parse).
+-module(esip2_parse).
 
 -compile([export_all]).
--include("esip_parse.hrl").
+-include("esip2_parse.hrl").
+-include("esip2_parse_utils.hrl").
 
 -define(COLLECT(X, Acc), case X of
                         {ok, Result, Rest} ->
@@ -25,7 +26,7 @@ Content-Length: 0\r
 test_resp_msg() ->
     "SIP/2.0 401 Unauthorized\r
 Via: SIP/2.0/TLS client.biloxi.example.com:5061;branch=z9hG4bKnashds7
- ;received=192.0.2.201
+ ;received=192.0.2.201\r
 From: Bob <sips:bob@biloxi.example.com>;tag=a73kszlfl\r
 To: Bob <sips:bob@biloxi.example.com>;tag=1410948204\r
 Call-ID: 1j9FpLxk3uxtm8tn@biloxi.example.com\r
@@ -43,28 +44,9 @@ test_req() ->
 test_resp() ->
     parse_resp(test_resp_msg()).
 
-
-%% ---------- defines ----------------
--record(sip_req, {method, ruri, version, headers, body}).
--record(sip_resp, {code, phrase, version, headers, body}).
--record(ruri, {protocol,uri,port,tags}).
--record(hd_via, {}).
--record(hd_max_forwards, {}).
--record(hd_from, {}).
--record(hd_to, {}).
--record(hd_call_id, {}).
--record(hd_cseq, {}).
--record(hd_contact, {}).
--record(hd_content_length, {}).
--record(hd_www_authenticate, {}).
-
--record(status_line, {code,phrase,version}).
--record(request_line, {method,ruri,version}).
-
-
 %% ---------- parsers ----------------
 
-parse([$S,$I,$P, $/ | _] = Msg) ->
+parse(["SIP/" ++ _Rest] = Msg) ->
     parse_resp(Msg);
 parse(Msg) ->
     parse_req(Msg).
@@ -141,60 +123,58 @@ parse_ruri(Msg) ->
     {ok, RURI, Rest}.
 
 %% ---------------------------- headers parsers ------------------------------------
-parse_headers([$\r,$\n | Msg]) ->
-    parse_headers(Msg);
 parse_headers(Msg) ->
     parse_headers(Msg, []).
 
+%% general case to stop on body
 parse_headers([$\r,$\n | Rest], Acc) ->
     {ok, lists:reverse(Acc), Rest};
-parse_headers([$\ | Msg], Acc) ->
-    parse_headers(Msg, Acc);
+
 %% hd_via
-parse_headers([$V,$i,$a | Msg], Acc) -> ?COLLECT(parse_hd_via(Msg), Acc);
-parse_headers([$V,$I,$A | Msg], Acc) -> ?COLLECT(parse_hd_via(Msg), Acc);
-parse_headers([$v,$i,$a | Msg], Acc) -> ?COLLECT(parse_hd_via(Msg), Acc);
+parse_headers("Via: " ++ Msg, Acc) -> ?COLLECT(parse_hd_via(Msg), Acc);
+parse_headers("VIA: " ++ Msg, Acc) -> ?COLLECT(parse_hd_via(Msg), Acc);
+parse_headers("via: " ++ Msg, Acc) -> ?COLLECT(parse_hd_via(Msg), Acc);
 %% hd_to
-parse_headers([$t,$o | Msg], Acc) -> ?COLLECT(parse_hd_to(Msg), Acc);
-parse_headers([$T,$o | Msg], Acc) -> ?COLLECT(parse_hd_to(Msg), Acc);
-parse_headers([$T,$O | Msg], Acc) -> ?COLLECT(parse_hd_to(Msg), Acc);
+parse_headers("to: " ++ Msg, Acc) -> ?COLLECT(parse_hd_to(Msg), Acc);
+parse_headers("To: " ++ Msg, Acc) -> ?COLLECT(parse_hd_to(Msg), Acc);
+parse_headers("TO: " ++ Msg, Acc) -> ?COLLECT(parse_hd_to(Msg), Acc);
 %% hd_from
-parse_headers([$F,$r,$o,$m | Msg], Acc) -> ?COLLECT(parse_hd_from(Msg), Acc);
-parse_headers([$F,$R,$O,$M | Msg], Acc) -> ?COLLECT(parse_hd_from(Msg), Acc);
-parse_headers([$f,$r,$o,$m | Msg], Acc) -> ?COLLECT(parse_hd_from(Msg), Acc);
+parse_headers("From: " ++ Msg, Acc) -> ?COLLECT(parse_hd_from(Msg), Acc);
+parse_headers("FROM: " ++ Msg, Acc) -> ?COLLECT(parse_hd_from(Msg), Acc);
+parse_headers("from: " ++ Msg, Acc) -> ?COLLECT(parse_hd_from(Msg), Acc);
 %% hd_call_id
-parse_headers([$c,$a,$l,$l,$-,$i,$d | Msg], Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
-parse_headers([$C,$a,$l,$l,$-,$I,$d | Msg], Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
-parse_headers([$C,$a,$l,$l,$-,$I,$D | Msg], Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
-parse_headers([$C,$A,$L,$L,$-,$I,$D | Msg], Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
+parse_headers("call-id: " ++ Msg, Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
+parse_headers("Call-Id: " ++ Msg, Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
+parse_headers("Call-ID: " ++ Msg, Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
+parse_headers("CALL-ID: " ++ Msg, Acc) -> ?COLLECT(parse_hd_call_id(Msg), Acc);
 %% hd_cseq
-parse_headers([$c,$s,$e,$q | Msg], Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
-parse_headers([$C,$s,$e,$q | Msg], Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
-parse_headers([$C,$S,$e,$q | Msg], Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
-parse_headers([$C,$S,$E,$Q | Msg], Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
+parse_headers("cseq: " ++ Msg, Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
+parse_headers("Cseq: " ++ Msg, Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
+parse_headers("CSeq: " ++ Msg, Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
+parse_headers("CSEQ: " ++ Msg, Acc) -> ?COLLECT(parse_hd_cseq(Msg), Acc);
 %% hd_www_authenticate
-parse_headers([$W,$W,$W,$-,$A,$u,$t,$h,$e,$n,$t,$i,$c,$a,$t,$e | Msg], Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
-parse_headers([$W,$w,$w,$-,$A,$u,$t,$h,$e,$n,$t,$i,$c,$a,$t,$e | Msg], Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
-parse_headers([$w,$w,$w,$-,$a,$u,$t,$h,$e,$n,$t,$i,$c,$a,$t,$e | Msg], Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
-parse_headers([$W,$W,$W,$-,$A,$U,$T,$H,$E,$N,$T,$I,$C,$A,$T,$E | Msg], Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
+parse_headers("WWW-Authenticate: " ++ Msg, Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
+parse_headers("Www-Authenticate: " ++ Msg, Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
+parse_headers("www-authenticate: " ++ Msg, Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
+parse_headers("WWW-AUTHENTICATE: " ++ Msg, Acc) -> ?COLLECT(parse_hd_www_authenticate(Msg), Acc);
 %% hd_max_forwards
-parse_headers([$M,$a,$x,$-,$F,$o,$r,$w,$a,$r,$d,$s | Msg], Acc) -> ?COLLECT(parse_hd_max_forwards(Msg), Acc);
-parse_headers([$M,$A,$X,$-,$F,$O,$R,$W,$A,$R,$D,$S | Msg], Acc) -> ?COLLECT(parse_hd_max_forwards(Msg), Acc);
-parse_headers([$m,$a,$x,$-,$f,$o,$r,$w,$a,$r,$d,$s | Msg], Acc) -> ?COLLECT(parse_hd_max_forwards(Msg), Acc);
+parse_headers("Max-Forwards: " ++ Msg, Acc) -> ?COLLECT(parse_hd_max_forwards(Msg), Acc);
+parse_headers("MAX-FORWARDS: " ++ Msg, Acc) -> ?COLLECT(parse_hd_max_forwards(Msg), Acc);
+parse_headers("max-forwards: " ++ Msg, Acc) -> ?COLLECT(parse_hd_max_forwards(Msg), Acc);
 %% hd_contact
-parse_headers([$C,$o,$n,$t,$a,$c,$t | Msg], Acc) -> ?COLLECT(parse_hd_contact(Msg), Acc);
-parse_headers([$C,$O,$N,$T,$A,$C,$T | Msg], Acc) -> ?COLLECT(parse_hd_contact(Msg), Acc);
-parse_headers([$c,$o,$n,$t,$a,$c,$t | Msg], Acc) -> ?COLLECT(parse_hd_contact(Msg), Acc);
+parse_headers("Contact: " ++ Msg, Acc) -> ?COLLECT(parse_hd_contact(Msg), Acc);
+parse_headers("CONTACT: " ++ Msg, Acc) -> ?COLLECT(parse_hd_contact(Msg), Acc);
+parse_headers("contact: " ++ Msg, Acc) -> ?COLLECT(parse_hd_contact(Msg), Acc);
 %% hd_content_length
-parse_headers([$C,$o,$n,$t,$e,$n,$t,$-,$L,$e,$n,$g,$t,$h | Msg], Acc) -> ?COLLECT(parse_hd_content_length(Msg), Acc);
-parse_headers([$C,$O,$N,$T,$E,$N,$T,$-,$L,$E,$N,$G,$T,$H | Msg], Acc) -> ?COLLECT(parse_hd_content_length(Msg), Acc);
-parse_headers([$c,$o,$n,$t,$e,$n,$t,$-,$l,$e,$n,$g,$t,$h | Msg], Acc) -> ?COLLECT(parse_hd_content_length(Msg), Acc).
+parse_headers("Content-Length: " ++ Msg, Acc) -> ?COLLECT(parse_hd_content_length(Msg), Acc);
+parse_headers("CONTENT-LENGTH: " ++ Msg, Acc) -> ?COLLECT(parse_hd_content_length(Msg), Acc);
+parse_headers("content-length: " ++ Msg, Acc) -> ?COLLECT(parse_hd_content_length(Msg), Acc).
 
 
 
 
-parse_resp_code([$  | Rest]) ->
-    parse_resp_code(Rest);
+parse_resp_code([$  | Msg]) ->
+    parse_resp_code(Msg);
 parse_resp_code(Msg) ->
     {Code, Rest1} = take_until($ , Msg),
     try {ok, list_to_integer(Code), Rest1}
@@ -210,35 +190,35 @@ parse_resp_phrase([$\r, $\n | Rest], Acc) ->
 parse_resp_phrase([A | Rest], Acc) ->
     parse_resp_phrase(Rest, [A | Acc]).
 
-parse_method([" " | Msg]) ->
+parse_method([$  | Msg]) ->
     parse_method(Msg);
-parse_method([$I,$N,$V,$I,$T,$E | Rest]) ->
+parse_method("INVITE" ++ Rest) ->
     {ok, invite, Rest};
-parse_method([$A,$C,$K | Rest]) ->
+parse_method("ACK" ++ Rest) ->
     {ok, ack, Rest};
-parse_method([$M,$E,$S,$S,$A,$G,$E | Rest]) ->
+parse_method("MESSAGE" ++ Rest) ->
     {ok, message, Rest};
-parse_method([$B,$Y,$E | Rest]) ->
+parse_method("BYE" ++ Rest) ->
     {ok, bye, Rest};
-parse_method([$C,$A,$N,$C,$E,$L | Rest]) ->
+parse_method("CANCEL" ++ Rest) ->
     {ok, cancel, Rest};
-parse_method([$R,$E,$G,$I,$S,$T,$E,$R | Rest]) ->
+parse_method("REGISTER" ++ Rest) ->
     {ok, register, Rest};
-parse_method([$O,$P,$T,$I,$O,$N,$S  | Rest]) ->
+parse_method("OPTIONS " ++ Rest) ->
     {ok, options, Rest};
-parse_method([$S,$U,$B,$S,$C,$R,$I,$B,$E | Rest]) ->
+parse_method("SUBSCRIBE" ++ Rest) ->
     {ok, subscribe, Rest};
-parse_method([$N,$O,$T,$I,$F,$Y | Rest]) ->
+parse_method("NOTIFY" ++ Rest) ->
     {ok, notify, Rest};
-parse_method([$U,$P,$D,$A,$T,$E | Rest]) ->
+parse_method("UPDATE" ++ Rest) ->
     {ok, update, Rest};
-parse_method([$P,$U,$B,$L,$I,$S,$H | Rest]) ->
+parse_method("PUBLISH" ++ Rest) ->
     {ok, publish, Rest};
-parse_method([$I,$N,$F,$O | Rest]) ->
+parse_method("INFO" ++ Rest) ->
     {ok, info, Rest};
-parse_method([$P,$R,$A,$C,$K | Rest]) ->
+parse_method("PRACK" ++ Rest) ->
     {ok, prack, Rest};
-parse_method([$R,$E,$F,$E,$R | Rest]) ->
+parse_method("REFER" ++ Rest) ->
     {ok, refer, Rest};
 parse_method(Msg) ->
     {error, Msg}.
@@ -256,47 +236,47 @@ parse_sip_protocol_version([$S,$I,$P, $/, A, $., B | Rest]) ->
     end.
 
 %% --------- headers ------------------
-parse_hd_via([$\r, $\n | Rest]) ->
+parse_hd_via([$\r,$\n | Rest]) ->
     {ok, #hd_via{}, Rest};
 parse_hd_via([_ | Msg]) ->
     parse_hd_via(Msg).
 
-parse_hd_to([$\r, $\n | Rest]) ->
+parse_hd_to([$\r,$\n | Rest]) ->
     {ok, #hd_to{}, Rest};
 parse_hd_to([_ | Msg]) ->
     parse_hd_to(Msg).
 
-parse_hd_from([$\r, $\n | Rest]) ->
+parse_hd_from([$\r,$\n | Rest]) ->
     {ok, #hd_from{}, Rest};
 parse_hd_from([_ | Msg]) ->
     parse_hd_from(Msg).
 
-parse_hd_cseq([$\r, $\n | Rest]) ->
+parse_hd_cseq([$\r,$\n | Rest]) ->
     {ok, #hd_cseq{}, Rest};
 parse_hd_cseq([_ | Msg]) ->
     parse_hd_cseq(Msg).
 
-parse_hd_www_authenticate([$\r, $\n | Rest]) ->
+parse_hd_www_authenticate([$\r,$\n | Rest]) ->
     {ok, #hd_www_authenticate{}, Rest};
 parse_hd_www_authenticate([_ | Msg]) ->
     parse_hd_www_authenticate(Msg).
 
-parse_hd_max_forwards([$\r, $\n | Rest]) ->
+parse_hd_max_forwards([$\r,$\n | Rest]) ->
     {ok, #hd_max_forwards{}, Rest};
 parse_hd_max_forwards([_ | Msg]) ->
     parse_hd_max_forwards(Msg).
 
-parse_hd_call_id([$\r, $\n | Rest]) ->
+parse_hd_call_id([$\r,$\n | Rest]) ->
     {ok, #hd_call_id{}, Rest};
 parse_hd_call_id([_ | Msg]) ->
     parse_hd_call_id(Msg).
 
-parse_hd_contact([$\r, $\n | Rest]) ->
+parse_hd_contact([$\r,$\n | Rest]) ->
     {ok, #hd_contact{}, Rest};
 parse_hd_contact([_ | Msg]) ->
     parse_hd_contact(Msg).
 
-parse_hd_content_length([$\r, $\n | Rest]) ->
+parse_hd_content_length([$\r,$\n | Rest]) ->
     {ok, #hd_content_length{}, Rest};
 parse_hd_content_length([_ | Msg]) ->
     parse_hd_content_length(Msg).
