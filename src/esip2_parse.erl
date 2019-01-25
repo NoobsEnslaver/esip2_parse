@@ -86,10 +86,10 @@ parse_resp(Msg) ->
 parse_request_line(Msg) ->
     case parse_method(Msg) of
         {ok, Method, Msg1} ->
-            case parse_ruri(Msg1) of
+            case parse_addr(Msg1) of
                 {ok, RURI, Msg2} ->
                     case parse_sip_protocol_version(Msg2) of
-                        {ok, Version, Msg3} ->
+                        {ok, Version, [$\r,$\n | Msg3]} ->
                             {ok, #request_line{method = Method, ruri = RURI, version = Version}, Msg3};
                         Error -> Error
                     end;
@@ -100,7 +100,7 @@ parse_request_line(Msg) ->
 
 parse_status_line(Msg) ->
     case parse_sip_protocol_version(Msg) of
-        {ok, Version, Msg1} ->
+        {ok, Version, [$  | Msg1]} ->
             case parse_resp_code(Msg1) of
                 {ok, Code, Msg2} ->
                     case parse_resp_phrase(Msg2) of
@@ -115,12 +115,6 @@ parse_status_line(Msg) ->
 
 parse_body(Msg) ->
     Msg.
-
-parse_ruri([$ | Msg]) ->
-    parse_ruri(Msg);
-parse_ruri(Msg) ->
-    {RURI, Rest} = take_until($ , Msg),
-    {ok, RURI, Rest}.
 
 %% ---------------------------- headers parsers ------------------------------------
 parse_headers(Msg) ->
@@ -223,23 +217,50 @@ parse_method("REFER" ++ Rest) ->
 parse_method(Msg) ->
     {error, Msg}.
 
-
-parse_sip_protocol_version([$  | Rest]) ->
-    parse_sip_protocol_version(Rest);
-parse_sip_protocol_version([$S,$I,$P, $/, A, $., B,$\r,$\n | Rest]) ->
-    try {ok, list_to_float([A,$.,B]), Rest}
-    catch _:E -> {error, bad_sip_protocol_version, E}
-    end;
-parse_sip_protocol_version([$S,$I,$P, $/, A, $., B | Rest]) ->
+parse_sip_protocol_version("SIP/" ++ [A,$.,B | Rest]) ->
     try {ok, list_to_float([A,$.,B]), Rest}
     catch _:E -> {error, bad_sip_protocol_version, E}
     end.
 
+parse_addr([$ | Msg]) ->
+    parse_addr(Msg);
+parse_addr(Msg) ->
+    {RURI, Rest} = take_until($ , Msg),
+    {ok, RURI, Rest}.
+
+
 %% --------- headers ------------------
-parse_hd_via([$\r,$\n | Rest]) ->
-    {ok, #hd_via{}, Rest};
-parse_hd_via([_ | Msg]) ->
-    parse_hd_via(Msg).
+%% Via: SIP/2.0/TLS client.biloxi.example.com:5061;branch=z9hG4bKnashds7
+%%  ;received=192.0.2.201\r\n
+
+parse_hd_via(Msg) ->
+    case parse_sip_protocol_version(Msg) of
+        {ok, Version, [$/ | Rest1]} ->
+            case parse_transport(Rest1) of
+                {ok, Transport, [$  | Rest2]} ->
+                    case parse_addr(Rest2) of
+                        {ok, Addr, Rest3} ->
+                            ViaWithoutParams = #hd_via{protocol = sip   %TODO
+                                                      ,version = Version
+                                                      ,transport = Transport
+                                                      ,sent_by_host = Addr#addr.host
+                                                      ,sent_by_port = Addr#addr.port},
+                            parse_hd_via(Rest3, ViaWithoutParams);
+                Error -> Error
+            end;
+        Error -> Error
+    end.
+
+parse_hd_via([$  | Msg], Via) ->
+    parse_hd_via(Msg, Via);
+parse_hd_via(Msg, Via) ->
+    case parse_params(Msg) of
+        {ok, List, Rest} ->
+            %% Via#hd_via{branch = proplists:
+            %%           ,ttl :: byte()
+            %%           ,maddr :: string()
+            %%           ,received :: string()
+            %%           ,extension :: [generic_param()]}
 
 parse_hd_to([$\r,$\n | Rest]) ->
     {ok, #hd_to{}, Rest};
@@ -290,3 +311,10 @@ take_until(X, [X | Rest], Acc) ->
     {lists:reverse(Acc), Rest};
 take_until(X, [A | Rest], Acc) ->
     take_until(X, Rest, [A | Acc]).
+
+skip_ws([$  | Rest]) ->
+    skip_ws(Rest);
+skip_ws([$\t | Rest]) ->
+    skip_ws(Rest);
+skip_ws(Msg) ->
+    Msg.
