@@ -68,5 +68,12 @@
 -define(IS_WS(C), (C =:= $\s) or (C =:= $\t)).
 -define(IS_WS_COMMA(C), ?IS_WS(C) or (C =:= $,)).
 
+-define(GENERIC_PARAM_DELIMS, [$=,$;,$\n,[$\r,$\n],?SP,?HTAB]).
+-define(URI_DELIM, [$@,$:,$/]).
+
+-define(ALPHA, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ").
+-define(NUM, "0123456789").
+-define(ALPHANUM, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").
+-define(HOST, [$. | ?ALPHANUM]).
 
 -endif.

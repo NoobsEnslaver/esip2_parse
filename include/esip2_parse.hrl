@@ -85,7 +85,7 @@
               ,lr :: boolean()
               ,extension :: [generic_param()]}).
 
--record(hd_via, {protocol :: scheme()
+-record(hd_via, {protocol = sip :: scheme()
                 ,version :: float()
                 ,transport :: transport()
                 ,branch :: string()
@@ -94,7 +94,7 @@
                 ,ttl :: byte()
                 ,maddr :: string()
                 ,received :: string()
-                ,extension :: [generic_param()]}).
+                ,extension = [] :: [generic_param()]}).
 
 -record(hd_max_forwards, {num :: non_neg_integer()}).
 

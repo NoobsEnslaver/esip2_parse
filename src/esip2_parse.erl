@@ -12,7 +12,7 @@
 
 test_req_msg() ->
     "REGISTER sips:ss2.biloxi.example.com SIP/2.0\r
-Via: SIP/2.0/TLS client.biloxi.example.com:5061;branch=z9hG4bKnashds7\r
+Via: SIP/2.0/TLS client.biloxi.example.com:5061;branch=z9hG4bKnashds7;maddr=qwe1;ttl=201;lol=kek;lr\r
 Max-Forwards: 70\r
 From: Bob <sips:bob@biloxi.example.com>;tag=a73kszlfl\r
 To: Bob <sips:bob@biloxi.example.com>\r
@@ -85,9 +85,9 @@ parse_resp(Msg) ->
 
 parse_request_line(Msg) ->
     case parse_method(Msg) of
-        {ok, Method, Msg1} ->
-            case parse_addr(Msg1) of
-                {ok, RURI, Msg2} ->
+        {ok, Method, [?SP | Msg1]} ->
+            case parse_sip_uri(Msg1) of
+                {ok, RURI, [?SP | Msg2]} ->
                     case parse_sip_protocol_version(Msg2) of
                         {ok, Version, [$\r,$\n | Msg3]} ->
                             {ok, #request_line{method = Method, ruri = RURI, version = Version}, Msg3};
@@ -100,7 +100,7 @@ parse_request_line(Msg) ->
 
 parse_status_line(Msg) ->
     case parse_sip_protocol_version(Msg) of
-        {ok, Version, [$  | Msg1]} ->
+        {ok, Version, [?SP | Msg1]} ->
             case parse_resp_code(Msg1) of
                 {ok, Code, Msg2} ->
                     case parse_resp_phrase(Msg2) of
@@ -165,17 +165,12 @@ parse_headers("CONTENT-LENGTH: " ++ Msg, Acc) -> ?COLLECT(parse_hd_content_lengt
 parse_headers("content-length: " ++ Msg, Acc) -> ?COLLECT(parse_hd_content_length(Msg), Acc).
 
 
-
-
-parse_resp_code([$  | Msg]) ->
-    parse_resp_code(Msg);
-parse_resp_code(Msg) ->
-    {Code, Rest1} = take_until($ , Msg),
-    try {ok, list_to_integer(Code), Rest1}
-    catch _:_ -> {error, bad_resp_code, Code}
+parse_resp_code([C,O,D,?SP | Rest]) ->
+    try {ok, list_to_integer([C,O,D]), Rest}
+    catch _:_ -> {error, bad_resp_code, [C,O,D]}
     end.
 
-parse_resp_phrase([$  | Rest]) ->
+parse_resp_phrase([?SP | Rest]) ->
     parse_resp_phrase(Rest);
 parse_resp_phrase(Msg) ->
     parse_resp_phrase(Msg, "").
@@ -184,7 +179,7 @@ parse_resp_phrase([$\r, $\n | Rest], Acc) ->
 parse_resp_phrase([A | Rest], Acc) ->
     parse_resp_phrase(Rest, [A | Acc]).
 
-parse_method([$  | Msg]) ->
+parse_method([?SP | Msg]) ->
     parse_method(Msg);
 parse_method("INVITE" ++ Rest) ->
     {ok, invite, Rest};
@@ -222,12 +217,27 @@ parse_sip_protocol_version("SIP/" ++ [A,$.,B | Rest]) ->
     catch _:E -> {error, bad_sip_protocol_version, E}
     end.
 
-parse_addr([$ | Msg]) ->
-    parse_addr(Msg);
-parse_addr(Msg) ->
-    {RURI, Rest} = take_until($ , Msg),
-    {ok, RURI, Rest}.
+parse_sip_uri("sip:" ++ UserInfo) ->
+    parse_sip_uri(UserInfo, #addr{scheme = sip});
+parse_sip_uri("sips:" ++ UserInfo) ->
+    parse_sip_uri(UserInfo, #addr{scheme = sips}).
 
+parse_sip_uri(UserInfo, Addr) ->
+    {ok, {Host, Port}, Rest} = parse_host_port(UserInfo),
+    {ok, Addr#addr{host = Host, port = Port}, Rest}.
+
+parse_host(Msg) ->
+    {Host, Rest} = string:take(Msg, ?HOST),
+    {ok, Host, Rest}.
+
+parse_host_port(Msg) ->
+    case parse_host(Msg) of
+        {ok, Host, [$: | Rest]} ->
+            {Port, Rest1} = string:take(Rest, ?NUM),
+            {ok, {Host, list_to_integer(Port)}, Rest1};
+        {ok, Host, Rest} ->
+            {ok, {Host, undefined}, Rest}
+    end.
 
 %% --------- headers ------------------
 %% Via: SIP/2.0/TLS client.biloxi.example.com:5061;branch=z9hG4bKnashds7
@@ -237,30 +247,34 @@ parse_hd_via(Msg) ->
     case parse_sip_protocol_version(Msg) of
         {ok, Version, [$/ | Rest1]} ->
             case parse_transport(Rest1) of
-                {ok, Transport, [$  | Rest2]} ->
-                    case parse_addr(Rest2) of
-                        {ok, Addr, Rest3} ->
+                {ok, Transport, [?SP | Rest2]} ->
+                    case parse_host_port(Rest2) of
+                        {ok, {Host, Port}, Rest3} ->
                             ViaWithoutParams = #hd_via{protocol = sip   %TODO
                                                       ,version = Version
                                                       ,transport = Transport
-                                                      ,sent_by_host = Addr#addr.host
-                                                      ,sent_by_port = Addr#addr.port},
-                            parse_hd_via(Rest3, ViaWithoutParams);
-                Error -> Error
+                                                      ,sent_by_host = Host
+                                                      ,sent_by_port = Port},
+                            {Params, Rest4} = parse_params(Rest3),
+                            {ok, parse_hd_via(Params, ViaWithoutParams), Rest4};
+                        Error -> Error
+                    end
             end;
         Error -> Error
     end.
 
-parse_hd_via([$  | Msg], Via) ->
-    parse_hd_via(Msg, Via);
-parse_hd_via(Msg, Via) ->
-    case parse_params(Msg) of
-        {ok, List, Rest} ->
-            %% Via#hd_via{branch = proplists:
-            %%           ,ttl :: byte()
-            %%           ,maddr :: string()
-            %%           ,received :: string()
-            %%           ,extension :: [generic_param()]}
+parse_hd_via([], Via) ->
+    Via;
+parse_hd_via([{"branch", B} | Rest], Via) ->
+    parse_hd_via(Rest, Via#hd_via{branch = B});
+parse_hd_via([{"ttl", T} | Rest], Via) ->
+    parse_hd_via(Rest, Via#hd_via{ttl = list_to_integer(T)});
+parse_hd_via([{"maddr", M} | Rest], Via) ->
+    parse_hd_via(Rest, Via#hd_via{maddr = M});
+parse_hd_via([{"received", R} | Rest], Via) ->
+    parse_hd_via(Rest, Via#hd_via{received = R});
+parse_hd_via([Ext | Rest], Via) ->
+    parse_hd_via(Rest, Via#hd_via{extension = [Ext | Via#hd_via.extension]}).
 
 parse_hd_to([$\r,$\n | Rest]) ->
     {ok, #hd_to{}, Rest};
@@ -302,17 +316,45 @@ parse_hd_content_length([$\r,$\n | Rest]) ->
 parse_hd_content_length([_ | Msg]) ->
     parse_hd_content_length(Msg).
 
-%% --------- utils --------------------
-take_until(X, Msg) ->
-    take_until(X, Msg, "").
-take_until(_, [], Acc) ->
-    lists:reverse(Acc);
-take_until(X, [X | Rest], Acc) ->
-    {lists:reverse(Acc), Rest};
-take_until(X, [A | Rest], Acc) ->
-    take_until(X, Rest, [A | Acc]).
 
-skip_ws([$  | Rest]) ->
+parse_params(Msg) ->
+    {Acc, Rest} = parse_params(Msg, []),
+    {lists:reverse(Acc), Rest}.
+
+parse_params([?SP | Msg], Acc) ->
+    parse_params(Msg, Acc);
+parse_params([$\r,$\n | Rest], Acc) ->
+    {Acc, Rest};
+parse_params([$\n | Msg], Acc) ->
+    parse_params(Msg, Acc);
+parse_params([$; | Msg], Acc) ->
+    case string:take(Msg, ?GENERIC_PARAM_DELIMS, true) of
+        {Key, [$= | Rest]} ->
+            io:format("take1: ~p~n", [Key]),
+            {Value, Rest1} = string:take(Rest, ?GENERIC_PARAM_DELIMS, true),
+            io:format("take2: ~p~n", [Value]),
+            parse_params(Rest1, [{Key, Value} | Acc]);
+        {Key, Rest} ->
+            io:format("take3: ~p~n", [Key]),
+            parse_params(Rest, [Key | Acc])
+    end.
+
+parse_transport(Msg) ->
+    {T, Rest} = string:take(Msg, [?SP], true),
+    case string:lowercase(T) of
+        "tcp" -> {ok, tcp, Rest};
+        "udp" -> {ok, udp, Rest};
+        "tls" -> {ok, tls, Rest};
+        "sctp"-> {ok, sctp, Rest};
+        "ws"  -> {ok, ws, Rest};
+        "wss" -> {ok, wss, Rest};
+        Error -> {error, bad_transport, Error}
+    end.
+
+
+%% --------- utils --------------------
+
+skip_ws([?SP | Rest]) ->
     skip_ws(Rest);
 skip_ws([$\t | Rest]) ->
     skip_ws(Rest);
